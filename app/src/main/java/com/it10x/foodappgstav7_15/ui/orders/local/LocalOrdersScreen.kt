@@ -1,0 +1,581 @@
+package com.it10x.foodappgstav7_15.ui.orders.local
+
+import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.it10x.foodappgstav7_15.data.pos.entities.PosOrderMasterEntity
+import com.it10x.foodappgstav7_15.data.pos.viewmodel.POSOrdersViewModel
+import java.text.SimpleDateFormat
+import java.util.*
+import com.it10x.foodappgstav7_15.utils.formatter.MoneyFormatter
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.ui.platform.LocalContext
+import com.it10x.foodappgstav7_15.utils.share.ReceiptImageGenerator
+import com.it10x.foodappgstav7_15.utils.share.ReceiptPdfGenerator
+import com.it10x.foodappgstav7_15.utils.share.ShareUtils
+import androidx.compose.runtime.rememberCoroutineScope
+import com.it10x.foodappgstav7_15.data.pos.entities.config.OutletEntity
+import kotlinx.coroutines.launch
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LocalOrdersScreen(
+    viewModel: POSOrdersViewModel,
+    navController: NavController,
+    outlet: OutletEntity?
+){
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val orders by viewModel.orders.collectAsState()
+    val loading by viewModel.loading.collectAsState()
+    var selectedDate by remember { mutableStateOf<Long?>(null) }
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    val dateFormatter = remember {
+        SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+    }
+
+    var selectedOrder by remember {
+        mutableStateOf<PosOrderMasterEntity?>(null)
+    }
+    var selectedMimeType by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var selectedUri by remember {
+        mutableStateOf<Uri?>(null)
+    }
+
+    val currencyCode =
+        outlet?.currencyCode ?: "INR"
+
+    val localeTag =
+        outlet?.localeTag ?: "en-IN"
+
+    LaunchedEffect(Unit) {
+        viewModel.loadFirstPage()
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(12.dp)
+    ) {
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+
+            OutlinedButton(
+                onClick = { showDatePicker = true }
+            ) {
+                Text(
+                    selectedDate?.let { dateFormatter.format(Date(it)) }
+                        ?: "Select Date"
+                )
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            Button(
+                enabled = selectedDate != null,
+                onClick = {
+                    selectedDate?.let {
+                        viewModel.searchOrdersByDate(it)
+                    }
+                }
+            ) {
+                Text("Search")
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            OutlinedButton(
+                onClick = {
+                    selectedDate = null
+                    viewModel.loadFirstPage()
+                }
+            ) {
+                Text("Reset")
+            }
+
+            // 🔹 Push next button to extreme right
+            Spacer(modifier = Modifier.weight(1f))
+
+            // 🔹 History Orders Button (same navigation as drawer)
+            Button(
+                onClick = {
+                    navController.navigate("history_orders")
+                }
+            ) {
+                Text("History Orders")
+            }
+        }
+
+
+        when {
+            loading && orders.isEmpty() ->
+                Text("Loading orders...")
+
+            orders.isEmpty() ->
+                Text("No local orders found")
+
+            else -> {
+                LocalPosOrderTableHeader()
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    items(orders, key = { it.id }) { order ->
+                        LocalPosOrderTableRow(
+                            order = order,
+                            currencyCode = currencyCode,
+                            localeTag = localeTag,
+                            onOrderClick = {
+                                navController.navigate("local_order_detail/${order.id}")
+                            },
+                            onPrintBill = {
+                                viewModel.printOrder(order.id, role = "bill")
+                            },
+                            onPrintKitchen = {
+                                viewModel.printOrder(order.id, role = "kitchen")
+                            },
+                            onShareWhatsApp = {
+                                selectedOrder = order
+                            }
+                        )
+                    }
+
+
+                }
+
+
+               // ✅ PAGINATION FOOTER
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+
+                    Button(
+                        onClick = { viewModel.loadPrevPage() },
+                        enabled = !loading
+                    ) {
+                        Text("← Previous")
+                    }
+
+                    Text(
+                        text = "Page ${viewModel.pageIndex.collectAsState().value + 1}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    Button(
+                        onClick = { viewModel.loadNextPage() },
+                        enabled = !loading
+                    ) {
+                        Text("Next →")
+                    }
+                }
+
+            }
+        }
+    }
+
+
+    if (showDatePicker) {
+
+        val datePickerState = rememberDatePickerState()
+
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        selectedDate = datePickerState.selectedDateMillis
+                        showDatePicker = false
+                    }
+                ) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("Cancel")
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+
+    selectedOrder?.let { order ->
+
+        AlertDialog(
+            onDismissRequest = {
+                selectedOrder = null
+            },
+
+            title = {
+                Text("Share Receipt")
+            },
+
+            text = {
+                Text("Choose receipt format")
+            },
+
+            confirmButton = {
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+
+                    Button(
+                        onClick = {
+
+                            coroutineScope.launch {
+
+                                val orderItems =
+                                    viewModel.getOrderItems(order.id)
+
+                                val imageUri =
+                                    ReceiptImageGenerator.generateReceiptImage(
+                                        context = context,
+                                        order = order,
+                                        items = orderItems,
+                                        outlet = outlet
+                                    )
+
+                                selectedUri = imageUri
+                                selectedMimeType = "image/png"
+
+                                selectedOrder = null
+                            }
+                        }
+                    ) {
+                        Text("Image")
+                    }
+
+                    Button(
+                        onClick = {
+
+                            coroutineScope.launch {
+
+                                val orderItems =
+                                    viewModel.getOrderItems(order.id)
+
+                                val pdfUri =
+                                    ReceiptPdfGenerator.generatePdf(
+                                        context = context,
+                                        order = order,
+                                        items = orderItems,
+                                        outlet = outlet
+                                    )
+
+                                selectedUri = pdfUri
+                                selectedMimeType = "application/pdf"
+
+                                selectedOrder = null
+                            }
+                        }
+                    ) {
+                        Text("PDF")
+                    }
+                }
+            },
+
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        selectedOrder = null
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+
+    selectedUri?.let { uri ->
+
+        AlertDialog(
+            onDismissRequest = {
+                selectedUri = null
+            },
+
+            title = {
+                Text("Share Via")
+            },
+
+            text = {
+                Text("Choose app")
+            },
+
+            confirmButton = {
+
+                Column {
+
+                    Button(
+                        onClick = {
+
+                            ShareUtils.shareToWhatsApp(
+                                context = context,
+                                uri = uri,
+                                mimeType = selectedMimeType!!
+                            )
+
+                            selectedUri = null
+                        }
+                    ) {
+                        Text("WhatsApp")
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+//                    Button(
+//                        onClick = {
+//
+//                            val sdf = SimpleDateFormat(
+//                                "dd MMM yyyy hh:mm a",
+//                                Locale.getDefault()
+//                            )
+//
+//                            val message = buildString {
+//
+//                                appendLine("Order Receipt")
+//                                appendLine("Order #: ${selectedOrder?.srno}")
+//
+//                                appendLine(
+//                                    "Date: ${
+//                                        selectedOrder?.createdAt?.let {
+//                                            sdf.format(Date(it))
+//                                        }
+//                                    }"
+//                                )
+//
+//                                appendLine(
+//                                    "Type: ${selectedOrder?.orderType}"
+//                                )
+//
+//                                appendLine(
+//                                    "Payment: ${selectedOrder?.paymentMode}"
+//                                )
+//
+//                                appendLine(
+//                                    "Total: ₹${"%.2f".format(selectedOrder?.grandTotal ?: 0.0)}"
+//                                )
+//
+//                                if (!outlet?.outletName.isNullOrBlank()) {
+//
+//                                    appendLine()
+//                                    appendLine(outlet?.outletName)
+//                                }
+//
+//                                if (!outlet?.phone.isNullOrBlank()) {
+//
+//                                    appendLine("Ph: ${outlet?.phone}")
+//                                }
+//
+//                                appendLine()
+//                                append("Thank you for your order.")
+//                            }
+//
+//                            ShareUtils.shareSms(
+//                                context = context,
+//                                message = message
+//                            )
+//
+//                            selectedUri = null
+//                        }
+//                    ) {
+//                        Text("SMS")
+//                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Button(
+                        onClick = {
+
+                            ShareUtils.shareFile(
+                                context = context,
+                                uri = uri,
+                                mimeType = selectedMimeType!!
+                            )
+
+                            selectedUri = null
+                        }
+                    ) {
+                        Text("Other Apps")
+                    }
+                }
+            },
+
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        selectedUri = null
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+
+}
+
+
+@Composable
+fun LocalPosOrderTableHeader() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFEFEFEF))
+            .padding(vertical = 8.dp, horizontal = 8.dp)
+    ) {
+        HeaderCell("Order#", 0.14f)
+        HeaderCell("Type/Table", 0.18f)
+        HeaderCell("Amount", 0.16f)
+       // HeaderCell("Payment", 0.18f)
+     //   HeaderCell("Status", 0.18f)
+        HeaderCell("Time", 0.16f)
+        HeaderCell("Bill", 0.16f)
+    }
+}
+
+@Composable
+private fun RowScope.HeaderCell(text: String, weight: Float) {
+    Text(
+        text = text,
+        modifier = Modifier.weight(weight),
+        fontWeight = FontWeight.Bold,
+        style = MaterialTheme.typography.labelSmall
+    )
+}
+
+
+
+@Composable
+fun LocalPosOrderTableRow(
+    order: PosOrderMasterEntity,
+    currencyCode: String,
+    localeTag: String,
+    onOrderClick: () -> Unit,
+    onPrintBill: () -> Unit,
+    onPrintKitchen: () -> Unit,
+    onShareWhatsApp: () -> Unit
+) {
+
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onOrderClick() }
+            .padding(vertical = 8.dp, horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+
+        Text("#${order.srno}", modifier = Modifier.weight(0.12f))
+
+        val shortType = when (order.orderType.lowercase()) {
+            "delivery" -> "DV"
+            "takeaway" -> "TA"
+            "dine_in", "dine-in", "dinein" -> order.tableNo ?: "DINE"
+            else -> order.orderType.take(2).uppercase()
+        }
+
+        Text(shortType, modifier = Modifier.weight(0.16f))
+        Text(
+            text = MoneyFormatter.format(
+                amount = order.grandTotal,
+                currencyCode = currencyCode,
+                localeTag = localeTag
+            ),
+            modifier = Modifier.weight(0.15f),
+            fontWeight = FontWeight.Medium
+        )
+
+//        Text(
+//            "${order.paymentType} • ${order.paymentStatus}",
+//            modifier = Modifier.weight(0.18f),
+//            style = MaterialTheme.typography.bodySmall
+//        )
+
+//        Text(
+//            order.orderStatus,
+//            modifier = Modifier.weight(0.15f),
+//            color = when (order.orderStatus.uppercase()) {
+//                "NEW" -> Color(0xFF1976D2)
+//                "ACCEPTED" -> Color(0xFF388E3C)
+//                "COMPLETED" -> Color(0xFF2E7D32)
+//                "CANCELLED" -> Color(0xFFD32F2F)
+//                else -> Color.DarkGray
+//            }
+//        )
+
+        Text(
+            formatLocalTime(order.createdAt),
+            modifier = Modifier.weight(0.12f),
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        // 🟢 Two separate print buttons (Bill + Kitchen)
+        Row(
+            modifier = Modifier.weight(0.12f),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+
+            IconButton(onClick = onPrintBill) {
+                Icon(
+                    imageVector = Icons.Filled.Print,
+                    contentDescription = "Print Bill",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+
+//            IconButton(onClick = onPrintKitchen) {
+//                Icon(
+//                    imageVector = Icons.Filled.Print,
+//                    contentDescription = "Print Kitchen",
+//                    tint = Color(0xFF4CAF50)
+//                )
+//            }
+
+            IconButton(onClick = onShareWhatsApp) {
+                Icon(
+                    imageVector = Icons.Filled.Send,
+                    contentDescription = "Share WhatsApp",
+                    tint = Color(0xFF25D366)
+                )
+            }
+        }
+    }
+
+    Divider()
+}
+
+
+
+private fun formatLocalTime(millis: Long): String {
+    val sdf = SimpleDateFormat("hh:mm a", Locale.getDefault())
+    return sdf.format(Date(millis))
+}
