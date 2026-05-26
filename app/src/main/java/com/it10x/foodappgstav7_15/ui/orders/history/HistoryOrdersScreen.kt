@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.it10x.foodappgstav7_15.data.online.models.OrderMasterData
+import com.it10x.foodappgstav7_15.data.pos.viewmodel.POSOrdersViewModel
 import com.it10x.foodappgstav7_15.printer.PrinterManager
 import com.it10x.foodappgstav7_15.viewmodel.OnlineOrdersViewModel
 import com.it10x.foodappgstav7_15.viewmodel.RealtimeOrdersViewModel
@@ -27,6 +28,7 @@ import java.util.*
 fun HistoryOrdersScreen(
     printerManager: PrinterManager,
     ordersViewModel: OnlineOrdersViewModel,
+    localOrdersViewModel:POSOrdersViewModel,
     realtimeOrdersViewModel: RealtimeOrdersViewModel,
     navController: NavController
 ) {
@@ -164,7 +166,10 @@ fun HistoryOrdersScreen(
                             onOrderClick = {
                                 navController.navigate("history_order_items/${order.id}")
                             },
-                            onPrintBill = { },
+                            onPrintBill = {
+                                ordersViewModel.printOrderFromHistory(order.id, role = "bill")
+                            },
+
                             onPrintKitchen = { }
                         )
                     }
@@ -334,14 +339,7 @@ fun HistoryOrderTableRow(
                 )
             }
 
-            IconButton(onClick = onPrintKitchen) {
 
-                Icon(
-                    imageVector = Icons.Filled.Print,
-                    contentDescription = "Print Kitchen",
-                    tint = Color(0xFF4CAF50)
-                )
-            }
         }
     }
 

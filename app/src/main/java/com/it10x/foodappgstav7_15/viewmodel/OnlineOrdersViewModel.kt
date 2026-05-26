@@ -60,9 +60,40 @@ class OnlineOrdersViewModel(
     // -----------------------------
     // PRINT ORDER (KITCHEN + BILLING)
     // -----------------------------
+
+    private fun loadOrders(page: Int) {
+
+        viewModelScope.launch {
+
+            try {
+
+                _loading.value = true
+
+                pageIndex.value = page
+
+                val offset = page * limit
+
+                val pagedOrders = repo.getPagedOrders(
+                    limit = limit,
+                    offset = offset
+                )
+
+                _orders.value = pagedOrders
+                    .sortedByDescending { it.createdAtMillis }
+
+            } catch (e: Exception) {
+
+                Log.e("PAGED_ORDERS", "Load failed", e)
+
+            } finally {
+
+                _loading.value = false
+            }
+        }
+    }
     fun printOrder(order: OrderMasterData) {
 
-     //   Log.d("PRINT_SOURCE", "🔥 OrdersViewModel.printOrder CALLED")
+        //   Log.d("PRINT_SOURCE", "🔥 OrdersViewModel.printOrder CALLED")
         viewModelScope.launch {
 
             val items = repo.getOrderProducts(order.id)
@@ -94,6 +125,77 @@ class OnlineOrdersViewModel(
         }
     }
 
+
+    fun printOrderFromHistory(orderId: String, role: String) {
+
+        viewModelScope.launch {
+
+            _loading.value = true
+
+            try {
+
+                Log.d("ONLINE_PRINT", "Print requested for orderId=$orderId")
+
+                // 🔥 Get order from already loaded list
+                val order = _orders.value.find { it.id == orderId }
+
+                if (order == null) {
+
+                    Log.e("ONLINE_PRINT", "Order NOT FOUND for orderId=$orderId")
+                    return@launch
+                }
+
+                // 🔥 Get Firestore items
+                val items = repo.getOrderProducts(orderId)
+
+                if (items.isEmpty()) {
+
+                    Log.e("ONLINE_PRINT", "No items for orderId=$orderId")
+                    return@launch
+                }
+
+                // -----------------------------
+                // BILL PRINT
+                // -----------------------------
+
+                if (role == "bill") {
+
+                    val printOrder = FirestorePrintMapper.map(order, items)
+
+                    printerManager.printTextNew(
+                        PrinterRole.BILLING,
+                        printOrder
+                    )
+                }
+
+                // -----------------------------
+                // KITCHEN PRINT
+                // -----------------------------
+
+                if (role == "kitchen") {
+
+                    val kotItems = OnlineOrderMapper.toKotItems(items)
+
+                    printerManager.printTextKitchen(
+                        PrinterRole.KITCHEN,
+                        sessionKey = order.srno.toString(),
+                        orderType = "Online order",
+                        kotItems
+                    ) {
+                        Log.d("ONLINE_PRINT", "Kitchen print success=$it")
+                    }
+                }
+
+            } catch (e: Exception) {
+
+                Log.e("ONLINE_PRINT", "Print failed", e)
+
+            } finally {
+
+                _loading.value = false
+            }
+        }
+    }
 
     fun loadFirstPage() {
         viewModelScope.launch {
@@ -221,59 +323,19 @@ class OnlineOrdersViewModel(
 // POS HISTORY
 // -----------------------------
     fun loadPosHistoryFirstPage() {
+        loadOrders( 0)
 
-        viewModelScope.launch {
-
-            _loading.value = true
-
-            pageIndex.value = 0
-            repo.resetPagination()
-
-            val orders = repo.getFirstPagePOS(limit.toLong())
-
-            _orders.value = orders
-                .sortedByDescending { it.createdAtMillis }
-
-            _loading.value = false
-        }
     }
 
     fun loadPosHistoryNextPage() {
-
-        viewModelScope.launch {
-
-            _loading.value = true
-
-            val newOrders = repo.getNextPagePOS(limit.toLong())
-
-            if (newOrders.isNotEmpty()) {
-                pageIndex.value++
-                _orders.value = newOrders
-                    .sortedByDescending { it.createdAtMillis }
-            }
-
-            _loading.value = false
-        }
+        loadOrders(pageIndex.value + 1)
     }
 
     fun loadPosHistoryPrevPage() {
 
-        viewModelScope.launch {
+        if (pageIndex.value == 0) return
 
-            if (pageIndex.value == 0) return@launch
-
-            _loading.value = true
-
-            val prevOrders = repo.getPrevPagePOS(limit.toLong())
-
-            if (prevOrders.isNotEmpty()) {
-                pageIndex.value--
-                _orders.value = prevOrders
-                    .sortedByDescending { it.createdAtMillis }
-            }
-
-            _loading.value = false
-        }
+        loadOrders(pageIndex.value - 1)
     }
 
     fun searchPOSOrdersByDate(startMillis: Long, endMillis: Long) {

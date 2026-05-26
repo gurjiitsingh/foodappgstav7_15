@@ -15,7 +15,8 @@ import java.util.Locale
 
 class OrdersRepository {
 
-    private val db = FirebaseFirestore.getInstance()
+    private val db: FirebaseFirestore
+        get() = FirebaseFirestore.getInstance()
 
     // -----------------------------
     // PAGINATION STATE
@@ -208,7 +209,7 @@ class OrdersRepository {
             val endTimestamp = com.google.firebase.Timestamp(Date(endMillis))
 
             val snapshot = db.collection("orderMaster")
-                .whereIn("source", listOf("WEB", "APP", "ONLINE"))
+                //    .whereIn("source", listOf("WEB", "APP", "ONLINE"))
                 .whereGreaterThanOrEqualTo("createdAt", startTimestamp)
                 .whereLessThanOrEqualTo("createdAt", endTimestamp)
                 .orderBy("createdAtMillis", Query.Direction.DESCENDING)
@@ -230,15 +231,16 @@ class OrdersRepository {
 
 
 
-
-
-    suspend fun getFirstPagePOS(limit: Long = 5): List<OrderMasterData> {
+    suspend fun getPagedOrders(
+        limit: Int,
+        offset: Int
+    ): List<OrderMasterData> {
 
         return try {
 
             val snapshot = db.collection("orderMaster")
                 .orderBy("createdAtMillis", Query.Direction.DESCENDING)
-                .limit(limit) // fetch more for local filtering
+                .limit((offset + limit).toLong())
                 .get()
                 .await()
 
@@ -246,94 +248,20 @@ class OrdersRepository {
                 it.toObject(OrderMasterData::class.java)?.copy(id = it.id)
             }
 
-            val posOrders = allOrders
+            allOrders
                 .filter { it.source == "POS" }
-                .take(limit.toInt())
-
-            posOrders
+                .drop(offset)
+                .take(limit)
 
         } catch (e: Exception) {
 
-            Log.e("POS_HISTORY", "First page failed", e)
+            Log.e("PAGED_ORDERS", "Failed to load paged orders", e)
             emptyList()
         }
     }
 
 
-
-    suspend fun getNextPagePOS(limit: Long = 10): List<OrderMasterData> {
-
-        if (lastDocument == null) return emptyList()
-
-        return try {
-
-            val snapshot = db.collection("orderMaster")
-                .whereEqualTo("source", "POS")
-                .orderBy("createdAtMillis", Query.Direction.DESCENDING)
-                .startAfter(lastDocument!!)
-                .limit(limit)
-                .get()
-                .await()
-
-            val docs = snapshot.documents
-
-            if (docs.isNotEmpty()) {
-                pageAnchors.add(docs.first())
-                lastDocument = docs.last()
-            }
-
-            docs.mapNotNull {
-                it.toObject(OrderMasterData::class.java)?.copy(id = it.id)
-            }
-
-        } catch (e: Exception) {
-
-            android.util.Log.e("POS_HISTORY", "Next page failed", e)
-            emptyList()
-
-        }
-    }
-
-
-    suspend fun getPrevPagePOS(limit: Long = 10): List<OrderMasterData> {
-
-        if (pageAnchors.size < 2) return emptyList()
-
-        pageAnchors.removeLast()
-        val prevAnchor = pageAnchors.last()
-
-        return try {
-
-            val snapshot = db.collection("orderMaster")
-                .whereEqualTo("source", "POS")
-                .orderBy("createdAtMillis", Query.Direction.DESCENDING)
-                .startAt(prevAnchor)
-                .limit(limit)
-                .get()
-                .await()
-
-            val docs = snapshot.documents
-
-            if (docs.isNotEmpty()) {
-                lastDocument = docs.last()
-            }
-
-            docs.mapNotNull {
-                it.toObject(OrderMasterData::class.java)?.copy(id = it.id)
-            }
-
-        } catch (e: Exception) {
-
-            android.util.Log.e("POS_HISTORY", "Prev page failed", e)
-            emptyList()
-
-        }
-    }
-
-
-
-
-    // -----------------------------
+// -----------------------------
 // SIMPLE HISTORY TEST (NO FILTER)
 // -----------------------------
 
