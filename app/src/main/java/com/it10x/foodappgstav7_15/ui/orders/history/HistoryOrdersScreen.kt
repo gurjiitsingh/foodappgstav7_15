@@ -28,7 +28,6 @@ import java.util.*
 fun HistoryOrdersScreen(
     printerManager: PrinterManager,
     ordersViewModel: OnlineOrdersViewModel,
-    localOrdersViewModel:POSOrdersViewModel,
     realtimeOrdersViewModel: RealtimeOrdersViewModel,
     navController: NavController
 ) {
